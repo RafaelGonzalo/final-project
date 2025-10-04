@@ -32,13 +32,13 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}
 
       - name: Run container (background)
-        shell: pwsh
+        shell: powershell
         run: |
           $IMAGE = "${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}"
           docker run -d --name final-project -p 8080:8080 $IMAGE
 
       - name: Wait for container to be ready
-        shell: pwsh
+        shell: powershell
         run: |
           $MAX_RETRIES = 30
           $SLEEP = 2
@@ -59,8 +59,8 @@ jobs:
               }
           }
 
-      - name: Test with curl (check response body)
-        shell: pwsh
+      - name: Test container response
+        shell: powershell
         run: |
           $RESPONSE = (Invoke-WebRequest -Uri http://localhost:8080/ -UseBasicParsing).Content
           Write-Host "response: $RESPONSE"
@@ -70,7 +70,7 @@ jobs:
           }
 
       - name: Collect container logs
-        shell: pwsh
+        shell: powershell
         if: always()
         run: |
           docker logs final-project | Out-File -FilePath container.log -Encoding utf8
@@ -83,7 +83,9 @@ jobs:
           path: container.log
 
       - name: Stop and remove container (cleanup)
-        shell: pwsh
+        shell: powershell
         if: always()
         run: |
           docker stop final-project | Out-Null
+          docker rm final-project | Out-Null
+          docker image rm "${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}" | Out-Null
