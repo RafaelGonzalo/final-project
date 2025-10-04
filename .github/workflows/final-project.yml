@@ -10,7 +10,7 @@ permissions:
 jobs:
   build-push-run-test:
     # Ejecuta en tu self-hosted runner (asegúrate de que exista una runner con estas etiquetas)
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, windows]
 
     steps:
       - name: Checkout repository
