@@ -62,11 +62,12 @@ jobs:
       - name: Test container response
         shell: powershell
         run: |
-          $RESPONSE = (Invoke-WebRequest -Uri http://localhost:8080/ -UseBasicParsing).Content
-          Write-Host "response: $RESPONSE"
-          if ($RESPONSE -ne "Hello, CI Pipeline!") {
+          $RESPONSE = curl http://localhost:8080/ | Select-String "Hello, CI Pipeline!"
+          if (-not $RESPONSE) {
               Write-Error "Unexpected response from container"
               exit 1
+          } else {
+              Write-Host "Response is OK: $($RESPONSE.Line)"
           }
 
       - name: Collect container logs
