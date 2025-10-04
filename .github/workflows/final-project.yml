@@ -1,0 +1,87 @@
+name: Final Project CI
+
+on:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-push-run-test:
+    # Ejecuta en tu self-hosted runner (asegúrate de que exista una runner con estas etiquetas)
+    runs-on: [self-hosted, linux]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx (optional)
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}
+
+      - name: Run container (background)
+        run: |
+          IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}
+          docker run -d --name final-project -p 8080:8080 $IMAGE
+
+      - name: Wait for container to be ready
+        run: |
+          set -e
+          MAX_RETRIES=30
+          SLEEP=2
+          for i in $(seq 1 $MAX_RETRIES); do
+            if curl --fail --silent http://localhost:8080/ >/dev/null 2>&1; then
+              echo "container ready"
+              break
+            fi
+            echo "waiting for container... attempt $i/$MAX_RETRIES"
+            sleep $SLEEP
+            if [ $i -eq $MAX_RETRIES ]; then
+              echo "container did not start in time" >&2
+              docker ps -a || true
+              docker logs final-project || true
+              exit 1
+            fi
+          done
+
+      - name: Test with curl (check response body)
+        run: |
+          RESPONSE=$(curl -sS http://localhost:8080/)
+          echo "response: $RESPONSE"
+          if [ "$RESPONSE" != "Hello, CI Pipeline!" ]; then
+            echo "Unexpected response from container" >&2
+            exit 1
+          fi
+
+      - name: Collect container logs
+        if: always()
+        run: |
+          docker logs final-project > container.log || true
+
+      - name: Upload logs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-project-logs
+          path: container.log
+
+      - name: Stop and remove container (cleanup)
+        if: always()
+        run: |
+          docker stop final-project || true
+          docker rm final-project || true
+          # opcional: eliminar la imagen
+          docker image rm ${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }} || true
