@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   build-push-run-test:
-    # Ejecuta en tu self-hosted runner (asegúrate de que exista una runner con estas etiquetas)
     runs-on: [self-hosted, windows]
 
     steps:
@@ -33,43 +32,48 @@ jobs:
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}
 
       - name: Run container (background)
+        shell: pwsh
         run: |
-          IMAGE=${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}
+          $IMAGE = "${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }}"
           docker run -d --name final-project -p 8080:8080 $IMAGE
 
       - name: Wait for container to be ready
+        shell: pwsh
         run: |
-          set -e
-          MAX_RETRIES=30
-          SLEEP=2
-          for i in $(seq 1 $MAX_RETRIES); do
-            if curl --fail --silent http://localhost:8080/ >/dev/null 2>&1; then
-              echo "container ready"
-              break
-            fi
-            echo "waiting for container... attempt $i/$MAX_RETRIES"
-            sleep $SLEEP
-            if [ $i -eq $MAX_RETRIES ]; then
-              echo "container did not start in time" >&2
-              docker ps -a || true
-              docker logs final-project || true
-              exit 1
-            fi
-          done
+          $MAX_RETRIES = 30
+          $SLEEP = 2
+          for ($i = 1; $i -le $MAX_RETRIES; $i++) {
+              try {
+                  Invoke-WebRequest -Uri http://localhost:8080/ -UseBasicParsing -TimeoutSec 2
+                  Write-Host "Container ready"
+                  break
+              } catch {
+                  Write-Host "Waiting for container... attempt $i/$MAX_RETRIES"
+                  Start-Sleep -Seconds $SLEEP
+                  if ($i -eq $MAX_RETRIES) {
+                      Write-Error "Container did not start in time"
+                      docker ps -a
+                      docker logs final-project
+                      exit 1
+                  }
+              }
+          }
 
       - name: Test with curl (check response body)
+        shell: pwsh
         run: |
-          RESPONSE=$(curl -sS http://localhost:8080/)
-          echo "response: $RESPONSE"
-          if [ "$RESPONSE" != "Hello, CI Pipeline!" ]; then
-            echo "Unexpected response from container" >&2
-            exit 1
-          fi
+          $RESPONSE = (Invoke-WebRequest -Uri http://localhost:8080/ -UseBasicParsing).Content
+          Write-Host "response: $RESPONSE"
+          if ($RESPONSE -ne "Hello, CI Pipeline!") {
+              Write-Error "Unexpected response from container"
+              exit 1
+          }
 
       - name: Collect container logs
+        shell: pwsh
         if: always()
         run: |
-          docker logs final-project > container.log || true
+          docker logs final-project | Out-File -FilePath container.log -Encoding utf8
 
       - name: Upload logs as artifact
         if: always()
@@ -79,9 +83,7 @@ jobs:
           path: container.log
 
       - name: Stop and remove container (cleanup)
+        shell: pwsh
         if: always()
         run: |
-          docker stop final-project || true
-          docker rm final-project || true
-          # opcional: eliminar la imagen
-          docker image rm ${{ secrets.DOCKERHUB_USERNAME }}/final-project:${{ github.sha }} || true
+          docker stop final-project | Out-Null
